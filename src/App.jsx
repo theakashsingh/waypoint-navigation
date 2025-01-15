@@ -1,148 +1,99 @@
-import { useState, useCallback } from "react";
-import VectorSource from "ol/source/Vector";
-import { Alert } from "@mui/material";
-import { setupDrawInteraction, updateCoordinates } from "./utils/mapUtils";
-import DrawTools from "./components/map/DrawTools";
-import MapView from "./components/map/MapView";
-import CoordinatesModal from "./components/modals/CoordinateModal";
+import  { useState } from 'react';
+import { formatCoordinates } from './utils/mapUtils';
+import VectorLayer from 'ol/layer/Vector';
+import VectorSource from 'ol/source/Vector';
+import Draw from 'ol/interaction/Draw';
+import { toLonLat } from 'ol/proj';
+import DrawTools from './components/map/DrawTools';
+import CoordinateModal from './components/modals/CoordinateModal';
+import MapView from './components/map/MapView';
 
-const App = () => {
+function App() {
   const [map, setMap] = useState(null);
-  const [draw, setDraw] = useState(null);
-  const [vectorSource] = useState(() => new VectorSource());
+  const [vectorSource] = useState(new VectorSource());
   const [modalOpen, setModalOpen] = useState(false);
   const [coordinates, setCoordinates] = useState([]);
   const [polygonCoordinates, setPolygonCoordinates] = useState([]);
   const [drawingMode, setDrawingMode] = useState(null);
-  const [error, setError] = useState(null);
+  const [selectedInsertIndex, setSelectedInsertIndex] = useState(null);
 
-  // Map initialization handler
-  const handleMapInit = useCallback(mapInstance => {
-    console.log("Map initialization:", mapInstance);
-    try {
-      if (!mapInstance) {
-        throw new Error("Map initialization failed");
-      }
-      setMap(mapInstance);
-      setError(null);
-    } catch (err) {
-      setError("Failed to initialize map");
-      console.error("Map initialization error:", err);
-    }
-  }, []);
+  const handleMapInit = (mapInstance) => {
+    const vectorLayer = new VectorLayer({ source: vectorSource });
+    mapInstance.addLayer(vectorLayer);
+    setMap(mapInstance);
+  };
 
-  // Drawing interaction setup
-  const startDrawing = useCallback(
-    type => {
-      console.log("Starting drawing mode:", type);
-      console.log("Current map state:", map);
+  const startDrawing = (type) => {
+    if (!map) return;
 
-      if (!map) {
-        setError("Map not initialized");
-        return;
-      }
+    const drawInteraction = new Draw({
+      source: vectorSource,
+      type: type
+    });
 
-      try {
-        // Clear any existing draw interaction
-        if (draw) {
-          console.log("Removing existing draw interaction");
-          map.removeInteraction(draw);
+    // Handle drawing events
+    drawInteraction.on('drawstart', (event) => {
+      const feature = event.feature;
+      
+      feature.getGeometry().on('change', (e) => {
+        const coords = e.target.getCoordinates();
+        const transformedCoords = type === 'LineString' 
+          ? coords.map(coord => toLonLat(coord))
+          : coords[0].map(coord => toLonLat(coord));
+
+        if (type === 'LineString') {
+          setCoordinates(formatCoordinates(transformedCoords));
+        } else {
+          setPolygonCoordinates(formatCoordinates(transformedCoords, 'PW'));
         }
+      });
+    });
 
-        // Setup new draw interaction
-        console.log("Setting up new draw interaction");
-        const drawInteraction = setupDrawInteraction(
-          map,
-          { source: vectorSource },
-          type,
-          (coords, prefix) => {
-            console.log("Coordinates updated:", coords);
-            const points = updateCoordinates(coords, prefix);
-            if (prefix === "WP") {
-              setCoordinates(points);
-            } else {
-              setPolygonCoordinates(points);
-            }
-          }
-        );
-
-        if (!drawInteraction) {
-          throw new Error("Failed to create draw interaction");
-        }
-
-        // Setup key press handler
-        const handleKeyPress = e => {
-          if (e.key === "Enter") {
-            console.log("Enter key pressed, finishing drawing");
-            drawInteraction.finishDrawing();
-          }
-        };
-
-        document.addEventListener("keydown", handleKeyPress);
-
-        // Add interaction to map
-        console.log("Adding draw interaction to map");
-        map.addInteraction(drawInteraction);
-        setDraw(drawInteraction);
-        setDrawingMode(type);
-
-        // Open modal
-        console.log("Opening modal");
-        setModalOpen(true);
-        setError(null);
-
-        return () => {
-          document.removeEventListener("keydown", handleKeyPress);
-          if (map && drawInteraction) {
-            map.removeInteraction(drawInteraction);
-          }
-        };
-      } catch (err) {
-        console.error("Drawing initialization error:", err);
-        setError("Failed to start drawing");
+    // Handle Enter key to finish drawing
+    const handleKeyPress = (event) => {
+      if (event.key === 'Enter') {
+        drawInteraction.finishDrawing();
+        document.removeEventListener('keydown', handleKeyPress);
       }
-    },
-    [map, draw, vectorSource]
-  );
+    };
+    document.addEventListener('keydown', handleKeyPress);
 
-  // Add console logs to modal handlers
-  const handleModalClose = useCallback(() => {
-    console.log("Closing modal");
-    try {
-      setModalOpen(false);
-      if (draw) {
-        map.removeInteraction(draw);
-        setDraw(null);
-      }
-    } catch (err) {
-      console.error("Modal close error:", err);
-      setError("Failed to close modal");
+    map.addInteraction(drawInteraction);
+    setDrawingMode(type);
+    setModalOpen(true);
+  };
+
+  const handleInsertPolygon = (index, position) => {
+    setSelectedInsertIndex(position === 'before' ? index : index + 1);
+    startDrawing('Polygon');
+  };
+
+  const handleImportPolygon = () => {
+    if (selectedInsertIndex !== null) {
+      const newCoordinates = [...coordinates];
+      newCoordinates.splice(selectedInsertIndex, 0, ...polygonCoordinates);
+      setCoordinates(newCoordinates);
+      setPolygonCoordinates([]);
+      setSelectedInsertIndex(null);
+      setDrawingMode('LineString');
     }
-  }, [draw, map]);
+  };
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-      {error && (
-        <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-          {error}
-        </Alert>
-      )}
-
+    <div className="h-screen flex flex-col">
       <DrawTools onStartDrawing={startDrawing} />
-
-      <MapView vectorSource={vectorSource} onMapInit={handleMapInit} />
-
-      <CoordinatesModal
-        open={modalOpen}
-        onClose={handleModalClose}
-        drawingMode={drawingMode}
+      <MapView onMapInit={handleMapInit} />
+      <CoordinateModal 
+        isOpen={modalOpen}
+        onClose={() => setModalOpen(false)}
         coordinates={coordinates}
         polygonCoordinates={polygonCoordinates}
-        onMenuClick={() => {}} // Add handlers as needed
-        onImportPoints={() => {}} // Add handlers as needed
+        drawingMode={drawingMode}
+        onInsertPolygon={handleInsertPolygon}
+        onImportPolygon={handleImportPolygon}
       />
     </div>
   );
-};
+}
 
 export default App;

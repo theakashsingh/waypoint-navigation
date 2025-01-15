@@ -1,26 +1,24 @@
-import {
-  Dialog,
-  DialogTitle,
+import { 
+  Dialog, 
+  DialogTitle, 
   DialogContent,
   Button,
   Box
 } from '@mui/material';
-import CoordinatesTable from './CoordinateTable';
+import CoordinateTable from './CoordinateTable';
 
-const CoordinatesModal = ({
-  open,
-  onClose,
+function CoordinateModal({ 
+  isOpen, 
+  onClose, 
+  coordinates, 
+  polygonCoordinates, 
   drawingMode,
-  coordinates,
-  polygonCoordinates,
-  onMenuClick,
-  onImportPoints
-}) => {
-  console.log('Modal props:', { open, drawingMode, coordinates, polygonCoordinates });
-  
+  onInsertPolygon,
+  onImportPolygon 
+}) {
   return (
     <Dialog 
-      open={open} 
+      open={isOpen} 
       onClose={onClose}
       maxWidth="lg"
       fullWidth
@@ -29,25 +27,31 @@ const CoordinatesModal = ({
         {drawingMode === 'LineString' ? 'Mission Planner' : 'Polygon Creation'}
       </DialogTitle>
       <DialogContent>
-        <CoordinatesTable 
-          points={drawingMode === 'LineString' ? coordinates : polygonCoordinates}
-          isLineString={drawingMode === 'LineString'}
-          onMenuClick={onMenuClick}
-        />
-        
-        {drawingMode === 'Polygon' && polygonCoordinates.length > 0 && (
-          <Box sx={{ mt: 2, display: 'flex', justifyContent: 'flex-end' }}>
-            <Button 
-              variant="contained" 
-              onClick={onImportPoints}
-            >
-              Import Points
-            </Button>
+        {drawingMode === 'LineString' ? (
+          <CoordinateTable 
+            points={coordinates} 
+            showActions={true} 
+            onInsertPolygon={onInsertPolygon}
+          />
+        ) : (
+          <Box>
+            <CoordinateTable 
+              points={polygonCoordinates} 
+              showActions={false} 
+            />
+            <Box display="flex" justifyContent="flex-end" mt={2}>
+              <Button 
+                variant="contained" 
+                onClick={onImportPolygon}
+              >
+                Import Points
+              </Button>
+            </Box>
           </Box>
         )}
       </DialogContent>
     </Dialog>
   );
-};
+}
 
-export default CoordinatesModal;
+export default CoordinateModal
